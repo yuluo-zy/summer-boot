@@ -5,6 +5,7 @@ use crate::{log, Server};
 
 use std::fmt::{self, Display, Formatter};
 
+use crate::tcp::ConnectionMode;
 use async_std::os::unix::net::{self, SocketAddr, UnixStream};
 use async_std::path::PathBuf;
 use async_std::prelude::*;
@@ -37,7 +38,7 @@ impl<State> UnixListener<State> {
     }
 }
 
-fn handle_unix<State: Clone + Send + Sync + 'static>(app: Server<State>, stream: UnixStream) {
+fn handle_h1_unix<State: Clone + Send + Sync + 'static>(app: Server<State>, stream: UnixStream) {
     task::spawn(async move {
         let local_addr = unix_socket_addr_to_string(stream.local_addr());
         let peer_addr = unix_socket_addr_to_string(stream.peer_addr());
@@ -73,7 +74,8 @@ where
         let conn_string = format!("{}", self);
         let transport = "uds".to_owned();
         let tls = false;
-        self.info = Some(ListenInfo::new(conn_string, transport, tls));
+        let conn_model = ConnectionMode::H1Only;
+        self.info = Some(ListenInfo::new(conn_string, transport, tls, conn_model));
 
         Ok(())
     }
@@ -90,6 +92,11 @@ where
 
         let mut incoming = listener.incoming();
 
+        let info = self
+            .info
+            .take()
+            .expect("`Listener::bind` 必须在之前设置 `UnixListener::Info`");
+
         while let Some(stream) = incoming.next().await {
             match stream {
                 Err(ref e) if is_transient_error(e) => continue,
@@ -100,9 +107,11 @@ where
                     continue;
                 }
 
-                Ok(stream) => {
-                    handle_unix(server.clone(), stream);
-                }
+                Ok(stream) => match info.conn_model {
+                    ConnectionMode::H1Only => handle_h1_unix(server.clone(), stream),
+                    ConnectionMode::H2Only => panic!("尚未实现"),
+                    ConnectionMode::Fallback => panic!("尚未实现"),
+                },
             };
         }
         Ok(())

@@ -3,13 +3,13 @@ use crate::Server;
 
 mod concurrent;
 mod failover;
-mod to_listener;
-mod to_listener_impls;
 mod parsed;
 mod tcp_listener;
+mod to_listener;
+mod to_listener_impls;
 mod unix;
 
-use std::fmt::{Debug, Display};
+use std::fmt::{write, Debug, Display, Formatter};
 
 use async_std::io;
 use async_trait::async_trait;
@@ -70,14 +70,21 @@ pub struct ListenInfo {
     conn_string: String,
     transport: String,
     tls: bool,
+    conn_model: ConnectionMode,
 }
 
 impl ListenInfo {
-    pub fn new(conn_string: String, transport: String, tls: bool) -> Self {
+    pub fn new(
+        conn_string: String,
+        transport: String,
+        tls: bool,
+        conn_model: ConnectionMode,
+    ) -> Self {
         Self {
             conn_string,
             transport,
             tls,
+            conn_model,
         }
     }
 
@@ -97,5 +104,30 @@ impl ListenInfo {
 impl Display for ListenInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.conn_string)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ConnectionMode {
+    /// 始终使用 HTTP/1，并且在发生解析错误时不要升级
+    H1Only,
+    /// 始终使用 HTTP/2
+    H2Only,
+    /// 使用 HTTP/1, 并且允许进行 HTTP/2 升级
+    Fallback,
+}
+impl Default for ConnectionMode {
+    fn default() -> Self {
+        ConnectionMode::H1Only
+    }
+}
+
+impl Display for ConnectionMode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConnectionMode::Fallback => write!(f, "Fallback"),
+            ConnectionMode::H2Only => write!(f, "H2Only"),
+            ConnectionMode::H1Only => write!(f, "H1Only"),
+        }
     }
 }

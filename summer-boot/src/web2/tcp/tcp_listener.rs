@@ -5,6 +5,7 @@ use crate::{log, Server};
 
 use std::fmt::{self, Display, Formatter};
 
+use crate::tcp::ConnectionMode;
 use async_std::net::{self, SocketAddr, TcpStream};
 use async_std::prelude::*;
 use async_std::{io, task};
@@ -36,7 +37,7 @@ impl<State> TcpListener<State> {
     }
 }
 
-fn handle_tcp<State: Clone + Send + Sync + 'static>(app: Server<State>, stream: TcpStream) {
+fn handle_h1_tcp<State: Clone + Send + Sync + 'static>(app: Server<State>, stream: TcpStream) {
     task::spawn(async move {
         let local_addr = stream.local_addr().ok();
         let peer_addr = stream.peer_addr().ok();
@@ -63,10 +64,7 @@ where
         self.server = Some(server);
 
         if self.listener.is_none() {
-            let addrs = self
-                .addrs
-                .take()
-                .expect("`bind` 只能调用一次");
+            let addrs = self.addrs.take().expect("`bind` 只能调用一次");
             let listener = net::TcpListener::bind(addrs.as_slice()).await?;
             self.listener = Some(listener);
         }
@@ -75,8 +73,8 @@ where
         let conn_string = format!("{}", self);
         let transport = "tcp".to_owned();
         let tls = false;
-        self.info = Some(ListenInfo::new(conn_string, transport, tls));
-
+        let conn_model = ConnectionMode::H1Only;
+        self.info = Some(ListenInfo::new(conn_string, transport, tls, conn_model));
         Ok(())
     }
 
@@ -92,6 +90,11 @@ where
 
         let mut incoming = listener.incoming();
 
+        let info = self
+            .info
+            .take()
+            .expect("`Listener::bind` 必须在之前设置 `TcpListener::Info`");
+
         while let Some(stream) = incoming.next().await {
             match stream {
                 Err(ref e) if is_transient_error(e) => continue,
@@ -102,9 +105,11 @@ where
                     continue;
                 }
 
-                Ok(stream) => {
-                    handle_tcp(server.clone(), stream);
-                }
+                Ok(stream) => match info.conn_model {
+                    ConnectionMode::H1Only => handle_h1_tcp(server.clone(), stream),
+                    ConnectionMode::H2Only => panic!("尚未实现"),
+                    ConnectionMode::Fallback => panic!("尚未实现"),
+                },
             };
         }
         Ok(())
