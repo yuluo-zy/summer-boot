@@ -3,21 +3,25 @@ use super::{is_transient_error, ListenInfo};
 use super::Listener;
 use crate::{log, Server};
 
-use std::fmt::{self, Display, Formatter};
+use std::fmt::{self, Debug, Display, Formatter};
 
 use crate::tcp::ConnectionMode;
 use async_std::net::{self, SocketAddr, TcpStream};
 use async_std::prelude::*;
 use async_std::{io, task};
+use h2::server as http2server;
+use tokio::net::{TcpListener as TokioTcpListener, TcpStream as TokioTcpStream};
 
-pub struct TcpListener<State> {
+pub struct TcpListener<State, T>
+where T: From<std::net::TcpListener>
+{
     addrs: Option<Vec<SocketAddr>>,
     listener: Option<net::TcpListener>,
     server: Option<Server<State>>,
     info: Option<ListenInfo>,
 }
 
-impl<State> TcpListener<State> {
+impl<State, T> TcpListener<State, T> where T: From<std::net::TcpListener>{
     pub fn from_addrs(addrs: Vec<SocketAddr>) -> Self {
         Self {
             addrs: Some(addrs),
@@ -27,10 +31,26 @@ impl<State> TcpListener<State> {
         }
     }
 
-    pub fn from_listener(tcp_listener: impl Into<net::TcpListener>) -> Self {
+    // pub fn from_listener(tcp_listener: impl Into<net::TcpListener>) -> Self {
+    //     Self {
+    //         addrs: None,
+    //         listener: Some(tcp_listener.into()),
+    //         server: None,
+    //         info: None,
+    //     }
+    // }
+    pub fn from_async_listener(tcp_listener: impl From<std::net::TcpListener>) -> Self {
         Self {
             addrs: None,
-            listener: Some(tcp_listener.into()),
+            listener: Some(AsyncTcpListener::from(tcp_listener)),
+            server: None,
+            info: None,
+        }
+    }
+    pub fn from_tokio_listener(tcp_listener: impl From<std::net::TcpListener>) -> Self {
+        Self {
+            addrs: None,
+            listener: Some(TokioTcpListener::from_std(tcp_listener)),
             server: None,
             info: None,
         }
@@ -54,20 +74,24 @@ fn handle_h1_tcp<State: Clone + Send + Sync + 'static>(app: Server<State>, strea
     });
 }
 
+fn handle_h2_tcp<State: Clone + Send + Sync + 'static>(app: Server<State>, stream: std::net::TcpStream) {
+    tokio::spawn(async {
+        let mut h2 = http2server::handshake(TokioTcpStream::from_std(stream)).await.unwrap();
+        while let Some(req) = h2.accept().await {
+            app.respond(req).await
+        }
+    });
+}
+
 #[async_trait::async_trait]
-impl<State> Listener<State> for TcpListener<State>
+impl<State,T> Listener<State> for TcpListener<State, T>
 where
     State: Clone + Send + Sync + 'static,
+    T: From<std::net::TcpListener>
 {
     async fn bind(&mut self, server: Server<State>) -> io::Result<()> {
         assert!(self.server.is_none(), "`bind`只能调用一次");
         self.server = Some(server);
-
-        if self.listener.is_none() {
-            let addrs = self.addrs.take().expect("`bind` 只能调用一次");
-            let listener = net::TcpListener::bind(addrs.as_slice()).await?;
-            self.listener = Some(listener);
-        }
 
         // Format the listen information.
         let conn_string = format!("{}", self);
@@ -75,6 +99,14 @@ where
         let tls = false;
         let conn_model = ConnectionMode::H1Only;
         self.info = Some(ListenInfo::new(conn_string, transport, tls, conn_model));
+        if self.listener.is_none() {
+            let addrs = self.addrs.take().expect("`bind` 只能调用一次");
+            let listener =  match conn_model {
+                ConnectionMode::H1Only => AsyncTcpListener::bind(addrs.as_slice()).await?,
+                _ => TokioTcpListener::bind(addrs.as_slice()).await?
+            };
+            self.listener = Some(listener);
+        }
         Ok(())
     }
 
@@ -123,7 +155,7 @@ where
     }
 }
 
-impl<State> fmt::Debug for TcpListener<State> {
+impl<State, T> fmt::Debug for TcpListener<State, T>where  T: From<std::net::TcpListener> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct("TcpListener")
             .field("listener", &self.listener)
@@ -140,7 +172,7 @@ impl<State> fmt::Debug for TcpListener<State> {
     }
 }
 
-impl<State> Display for TcpListener<State> {
+impl<State, T> Display for TcpListener<State, T> where T: From<std::net::TcpListener> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let http_fmt = |a| format!("http://{}", a);
         match &self.listener {
