@@ -1,3 +1,6 @@
+extern crate core;
+extern crate core;
+
 pub mod web2;
 pub mod common;
 pub mod log;

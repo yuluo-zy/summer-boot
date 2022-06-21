@@ -9,6 +9,7 @@ mod to_listener;
 mod to_listener_impls;
 mod unix;
 mod http2;
+mod h2;
 
 use std::fmt::{write, Debug, Display, Formatter};
 

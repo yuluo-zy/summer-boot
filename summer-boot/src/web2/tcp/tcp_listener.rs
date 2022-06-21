@@ -31,26 +31,10 @@ impl<State, T> TcpListener<State, T> where T: From<std::net::TcpListener>{
         }
     }
 
-    // pub fn from_listener(tcp_listener: impl Into<net::TcpListener>) -> Self {
-    //     Self {
-    //         addrs: None,
-    //         listener: Some(tcp_listener.into()),
-    //         server: None,
-    //         info: None,
-    //     }
-    // }
-    pub fn from_async_listener(tcp_listener: impl From<std::net::TcpListener>) -> Self {
+    pub fn from_listener(tcp_listener: impl Into<net::TcpListener>) -> Self {
         Self {
             addrs: None,
-            listener: Some(AsyncTcpListener::from(tcp_listener)),
-            server: None,
-            info: None,
-        }
-    }
-    pub fn from_tokio_listener(tcp_listener: impl From<std::net::TcpListener>) -> Self {
-        Self {
-            addrs: None,
-            listener: Some(TokioTcpListener::from_std(tcp_listener)),
+            listener: Some(tcp_listener.into()),
             server: None,
             info: None,
         }
