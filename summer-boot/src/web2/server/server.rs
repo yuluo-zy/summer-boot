@@ -233,7 +233,7 @@ where
     /// # #[async_std::main]
     /// # async fn main() -> http_types::Result<()> {
     /// #
-    /// use summer_boot::http::{Url, Method, Request, Response};
+    /// use http_types::{Url, Method, Request, Response};
     ///
     /// let mut app = summer_boot::new();
     /// app.at("/").get(|_| async { Ok("hello world") });
@@ -330,13 +330,6 @@ impl<State: Clone + Sync + Send + 'static, InnerState: Clone + Sync + Send + 'st
         };
 
         Ok(next.run(req).await)
-    }
-}
-
-#[util::async_trait]
-impl<State: Clone + Send + Sync + Unpin + 'static> http_client::HttpClient for Server<State> {
-    async fn send(&self, req: crate::http::Request) -> crate::http::Result<crate::http::Response> {
-        self.respond(req).await
     }
 }
 

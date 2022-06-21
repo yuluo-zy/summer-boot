@@ -5,13 +5,9 @@ use routefinder::Captures;
 use std::ops::Index;
 use std::pin::Pin;
 
-#[cfg(feature = "cookies")]
-use crate::cookies::CookieData;
-#[cfg(feature = "cookies")]
-use crate::http::cookies::Cookie;
-use crate::http::format_err;
-use crate::http::headers::{self, HeaderName, HeaderValues, ToHeaderValues};
-use crate::http::{self, Body, Method, Mime, StatusCode, Url, Version};
+use crate::http_types::format_err;
+use crate::http_types::headers::{self, HeaderName, HeaderValues, ToHeaderValues};
+use crate::http_types::{self, Body, Method, Mime, StatusCode, Url, Version};
 use crate::Response;
 
 pin_project_lite::pin_project! {
@@ -23,7 +19,7 @@ pin_project_lite::pin_project! {
     pub struct Request<State> {
         pub(crate) state: State,
         #[pin]
-        pub(crate) req: http::Request,
+        pub(crate) req: http_types::Request,
         pub(crate) route_params: Vec<Captures<'static, 'static>>,
     }
 }
@@ -67,24 +63,6 @@ impl<State> Request<State> {
     }
 
     /// 访问请求的完整URI方法。
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// # use async_std::task::block_on;
-    /// # fn main() -> Result<(), std::io::Error> { block_on(async {
-    /// #
-    /// use summer_boot::Request;
-    ///
-    /// let mut app = summer_boot::new();
-    /// app.at("/").get(|req: Request<()>| async move {
-    ///     assert_eq!(req.url(), &"/".parse::<summer_boot::http::Url>().unwrap());
-    ///     Ok("")
-    /// });
-    /// app.listen("127.0.0.1:8080").await?;
-    /// #
-    /// # Ok(()) })}
-    /// ```
     #[must_use]
     pub fn url(&self) -> &Url {
         self.req.url()
@@ -335,7 +313,7 @@ impl<State> Request<State> {
     ///
     /// ```
     /// use std::collections::HashMap;
-    /// use summer_boot::http::{self, convert::Deserialize};
+    /// use summer_boot::http_types::{self, convert::Deserialize};
     /// use summer_boot::Request;
     ///
     /// // 所有权结构:
@@ -346,7 +324,7 @@ impl<State> Request<State> {
     ///     selections: HashMap<String, String>,
     /// }
     ///
-    /// let req: Request<()> = http::Request::get("https://baidu.com/get?page=2&selections[width]=narrow&selections[height]=tall").into();
+    /// let req: Request<()> = http_types::Request::get("https://baidu.com/get?page=2&selections[width]=narrow&selections[height]=tall").into();
     /// let Index { page, selections } = req.query().unwrap();
     /// assert_eq!(page, 2);
     /// assert_eq!(selections["width"], "narrow");
@@ -359,7 +337,7 @@ impl<State> Request<State> {
     ///     format: &'q str,
     /// }
     ///
-    /// let req: Request<()> = http::Request::get("https://httpbin.org/get?format=bananna").into();
+    /// let req: Request<()> = http_types::Request::get("https://httpbin.org/get?format=bananna").into();
     /// let Query { format } = req.query().unwrap();
     /// assert_eq!(format, "bananna");
     /// ```
@@ -542,26 +520,26 @@ impl<State> Request<State> {
     }
 }
 
-impl<State> AsRef<http::Request> for Request<State> {
-    fn as_ref(&self) -> &http::Request {
+impl<State> AsRef<http_types::Request> for Request<State> {
+    fn as_ref(&self) -> &http_types::Request {
         &self.req
     }
 }
 
-impl<State> AsMut<http::Request> for Request<State> {
-    fn as_mut(&mut self) -> &mut http::Request {
+impl<State> AsMut<http_types::Request> for Request<State> {
+    fn as_mut(&mut self) -> &mut http_types::Request {
         &mut self.req
     }
 }
 
-impl<State> AsRef<http::Headers> for Request<State> {
-    fn as_ref(&self) -> &http::Headers {
+impl<State> AsRef<http_types::Headers> for Request<State> {
+    fn as_ref(&self) -> &http_types::Headers {
         self.req.as_ref()
     }
 }
 
-impl<State> AsMut<http::Headers> for Request<State> {
-    fn as_mut(&mut self) -> &mut http::Headers {
+impl<State> AsMut<http_types::Headers> for Request<State> {
+    fn as_mut(&mut self) -> &mut http_types::Headers {
         self.req.as_mut()
     }
 }
@@ -576,8 +554,8 @@ impl<State> Read for Request<State> {
     }
 }
 
-impl<State> From<Request<State>> for http::Request {
-    fn from(request: Request<State>) -> http::Request {
+impl<State> From<Request<State>> for http_types::Request {
+    fn from(request: Request<State>) -> http_types::Request {
         request.req
     }
 }
