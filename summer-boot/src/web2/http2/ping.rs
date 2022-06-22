@@ -8,9 +8,13 @@ use std::time::Duration;
 
 use h2::{Ping, PingPong};
 use tokio::time::{Instant, Sleep};
-use tracing::{debug, trace};
 
 type WindowSize = u32;
+
+struct Http2Error {
+    msg: String,
+}
+pub type Result<T> = std::result::Result<T, Http2Error>;
 
 // PING 帧 (type=0x6) 是一种用于测量来自发送方的最短往返时间以及确定空闲连接是否仍然有效的机制。PING 帧可以从任何端点发送
 
@@ -19,10 +23,7 @@ pub(super) fn disabled() -> Recorder {
 }
 
 pub(super) fn channel(ping_pong: PingPong, config: Config) -> (Recorder, Ponger) {
-    debug_assert!(
-        config.is_enabled(),
-        "ping channel requires bdp or keep-alive config",
-    );
+    debug_assert!(config.is_enabled(), "ping 通道需要 bdp 或 keep-alive 配置",);
 
     let bdp = config.bdp_initial_window.map(|wnd| Bdp {
         bdp: wnd,
@@ -38,7 +39,6 @@ pub(super) fn channel(ping_pong: PingPong, config: Config) -> (Recorder, Ponger)
         (None, None)
     };
 
-
     let keep_alive = config.keep_alive_interval.map(|interval| KeepAlive {
         interval,
         timeout: config.keep_alive_timeout,
@@ -47,14 +47,11 @@ pub(super) fn channel(ping_pong: PingPong, config: Config) -> (Recorder, Ponger)
         state: KeepAliveState::Init,
     });
 
-
     let last_read_at = keep_alive.as_ref().map(|_| Instant::now());
 
     let shared = Arc::new(Mutex::new(Shared {
         bytes,
-
         last_read_at,
-
         is_keep_alive_timed_out: false,
         ping_pong,
         ping_sent_at: None,
@@ -77,7 +74,6 @@ pub(super) fn channel(ping_pong: PingPong, config: Config) -> (Recorder, Ponger)
 pub(super) struct Config {
     pub(super) bdp_initial_window: Option<WindowSize>,
     /// If no frames are received in this amount of time, a PING frame is sent.
-
     pub(super) keep_alive_interval: Option<Duration>,
     /// After sending a keepalive PING, the connection will be closed if
     /// a pong is not received in this amount of time.
@@ -99,20 +95,17 @@ pub(super) struct Ponger {
 }
 
 struct Shared {
+    // 与对等方发送和接收 PING 帧的句柄。
     ping_pong: PingPong,
     ping_sent_at: Option<Instant>,
 
     // bdp
-    /// If `Some`, bdp is enabled, and this tracks how many bytes have been
-    /// read during the current sample.
+    /// 如果存在Some ， bdp 已启用，这将跟踪当前样本期间已读取的字节数。
     bytes: Option<usize>,
-    /// We delay a variable amount of time between BDP pings. This allows us
-    /// to send less pings as the bandwidth stabilizes.
+    /// 我们在 BDP ping 之间延迟可变的时间。这使我们能够在带宽稳定时发送更少的 ping
     next_bdp_at: Option<Instant>,
 
     // keep-alive
-    /// If `Some`, keep-alive is enabled, and the Instant is how long ago
-    /// the connection read the last frame.
     last_read_at: Option<Instant>,
 
     is_keep_alive_timed_out: bool,
@@ -122,32 +115,29 @@ struct Shared {
 struct Bdp {
     /// Current BDP in bytes
     bdp: u32,
-    /// Largest bandwidth we've seen so far.
+    /// 最大带宽
     max_bandwidth: f64,
     /// Round trip time in seconds
     rtt: f64,
-    /// Delay the next ping by this amount.
-    ///
-    /// This will change depending on how stable the current bandwidth is.
+
+    /// 将下一次 ping 延迟此数量。
+    // 这将根据当前带宽的稳定性而改变。
     ping_delay: Duration,
-    /// The count of ping round trips where BDP has stayed the same.
+    /// BDP 保持不变的 ping 往返次数。
     stable_count: u32,
 }
 
-
 struct KeepAlive {
-    /// If no frames are received in this amount of time, a PING frame is sent.
+    /// 如果在这段时间内没有收到任何帧，则会发送一个 PING 帧
     interval: Duration,
-    /// After sending a keepalive PING, the connection will be closed if
-    /// a pong is not received in this amount of time.
+    /// 发送 keepalive PING 后，如果在这段时间内没有收到
     timeout: Duration,
-    /// If true, sends pings even when there are no active streams.
+    /// 如果为 true，即使没有活动流，也会发送 ping
     while_idle: bool,
 
     state: KeepAliveState,
     timer: Pin<Box<Sleep>>,
 }
-
 
 enum KeepAliveState {
     Init,
@@ -157,10 +147,8 @@ enum KeepAliveState {
 
 pub(super) enum Ponged {
     SizeUpdate(WindowSize),
-
     KeepAliveTimedOut,
 }
-
 
 #[derive(Debug)]
 pub(super) struct KeepAliveTimedOut;
@@ -169,9 +157,7 @@ pub(super) struct KeepAliveTimedOut;
 
 impl Config {
     pub(super) fn is_enabled(&self) -> bool {
-
         self.bdp_initial_window.is_some() || self.keep_alive_interval.is_some()
-
     }
 }
 
@@ -187,11 +173,9 @@ impl Recorder {
 
         let mut locked = shared.lock().unwrap();
 
-
         locked.update_last_read_at();
 
-        // are we ready to send another bdp ping?
-        // if not, we don't need to record bytes either
+        // 判断是否可以去发送 ping
 
         if let Some(ref next_bdp_at) = locked.next_bdp_at {
             if Instant::now() < *next_bdp_at {
@@ -201,6 +185,7 @@ impl Recorder {
             }
         }
 
+        // 记录长度
         if let Some(ref mut bytes) = locked.bytes {
             *bytes += len;
         } else {
@@ -209,6 +194,7 @@ impl Recorder {
         }
 
         if !locked.is_ping_sent() {
+            // ping_sent_at
             locked.send_ping();
         }
     }
@@ -222,12 +208,12 @@ impl Recorder {
             };
 
             let mut locked = shared.lock().unwrap();
-
+            // 没有数据要增加的时候, 就 更新最后一次读取时间
             locked.update_last_read_at();
         }
     }
 
-    pub(super) fn ensure_not_timed_out(&self) -> crate::Result<()> {
+    pub(super) fn ensure_not_timed_out(&self) -> Result<()> {
         {
             if let Some(ref shared) = self.shared {
                 let locked = shared.lock().unwrap();
@@ -251,7 +237,6 @@ impl Ponger {
 
         let is_idle = self.is_idle();
 
-
         {
             if let Some(ref mut ka) = self.keep_alive {
                 ka.schedule(is_idle, &locked);
@@ -260,9 +245,10 @@ impl Ponger {
         }
 
         if !locked.is_ping_sent() {
-            // XXX: this doesn't register a waker...?
             return Poll::Pending;
         }
+
+        // ping_set 设置了时间
 
         match locked.ping_pong.poll_pong(cx) {
             Poll::Ready(Ok(_pong)) => {
@@ -272,7 +258,6 @@ impl Ponger {
                 locked.ping_sent_at = None;
                 let rtt = now - start;
                 trace!("recv pong");
-
 
                 {
                     if let Some(ref mut ka) = self.keep_alive {
@@ -298,13 +283,11 @@ impl Ponger {
                 debug!("pong error: {}", e);
             }
             Poll::Pending => {
-                {
-                    if let Some(ref mut ka) = self.keep_alive {
-                        if let Err(KeepAliveTimedOut) = ka.maybe_timeout(cx) {
-                            self.keep_alive = None;
-                            locked.is_keep_alive_timed_out = true;
-                            return Poll::Ready(Ponged::KeepAliveTimedOut);
-                        }
+                if let Some(ref mut ka) = self.keep_alive {
+                    if let Err(KeepAliveTimedOut) = ka.maybe_timeout(cx) {
+                        self.keep_alive = None;
+                        locked.is_keep_alive_timed_out = true;
+                        return Poll::Ready(Ponged::KeepAliveTimedOut);
                     }
                 }
             }
@@ -314,8 +297,8 @@ impl Ponger {
         Poll::Pending
     }
 
-
     fn is_idle(&self) -> bool {
+        // 判断是否空闲
         Arc::strong_count(&self.shared) <= 2
     }
 }
@@ -339,13 +322,11 @@ impl Shared {
         self.ping_sent_at.is_some()
     }
 
-
     fn update_last_read_at(&mut self) {
         if self.last_read_at.is_some() {
             self.last_read_at = Some(Instant::now());
         }
     }
-
 
     fn last_read_at(&self) -> Instant {
         self.last_read_at.expect("keep_alive expects last_read_at")
@@ -420,7 +401,6 @@ fn seconds(dur: Duration) -> f64 {
     secs + (dur.subsec_nanos() as f64) / NANOS_PER_SEC
 }
 
-
 impl KeepAlive {
     fn schedule(&mut self, is_idle: bool, shared: &Shared) {
         // 根据状态来更新keepAlive 设置睡眠时间
@@ -486,11 +466,13 @@ impl KeepAlive {
 
 // ===== impl KeepAliveTimedOut =====
 
-// impl KeepAliveTimedOut {
-//     pub(super) fn crate_error(self) -> Error {
-//         Error::new("").with(self)
-//     }
-// }
+impl KeepAliveTimedOut {
+    pub(super) fn crate_error(self) -> Http2Error {
+        Http2Error {
+            msg: "超时".into_string(),
+        }
+    }
+}
 
 impl fmt::Display for KeepAliveTimedOut {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -506,7 +488,6 @@ impl std::error::Error for KeepAliveTimedOut {
 
 #[derive(Debug)]
 pub(super) enum Kind {
-
     /// Error occurred while connecting.
     #[allow(unused)]
     Connect,
