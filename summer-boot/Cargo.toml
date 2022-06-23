@@ -37,6 +37,10 @@ http-types = { version = "2.11.0", default-features = false, features = ["fs"] }
 httparse = "1.6"
 futures-util = "0.3.6"
 h2 = "0.3.13"
+bytes = "1.1.0"
+futures-core = "0.3.21"
+derive_more="0.99.17"
+http = "0.2"
 
 
 # summer dependencies
